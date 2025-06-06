@@ -48,10 +48,14 @@ You have a couple tools available to you:
 MAX_MESSAGES = 20
 
 class PibTTSAgent:
+    """
+    A simple text-to-speech agent that uses OpenAI's TTS capabilities to speak text. It has a queue for the main thread to push text to be spoken, and a worker thread that processes this queue.
+    This allows for asynchronous speech synthesis without blocking the main thread, speeding it up significantly. 
+    """
     def __init__(self):
         self.speech_queue = Queue()
         self.tts_thread = None
-        self.thread_lock = threading.Lock()
+        self.thread_lock = threading.Lock() # to manage thread state. ensures that only one thread can modify the state at a time
         self.shutdown_timeout = 1  # seconds to wait before auto-shutdown
         self.running = False
         self.client = OpenAI()
@@ -123,6 +127,14 @@ class PibTTSAgent:
 
 
 class PibAgent:
+    """
+    The PibAgent class is a humanoid robot agent that interacts with users through voice and can perform tasks like taking pictures and getting weather information. It uses OpenAI's API for text-to-speech and image handling.
+    It maintains a conversation history and can handle tool calls for specific tasks. The agent is designed to be helpful, concise, and friendly in its responses.
+    There is a system prompt that sets the tone and capabilities of the agent, and it can handle a limited number of messages to keep the conversation relevant and reduce tokens used.
+    This agent has the ability to use custom tools which must also be defined in the tools list.
+
+    """
+
     tools = [
         {
             "type": "function",
@@ -219,6 +231,7 @@ class PibAgent:
 
         buffer = ""
         tool_calls = []
+        # streaming so text can be handled faster
         for event in stream:
             if event.type == "response.output_text.delta":
                 self.tts_agent.start_thread_if_needed()
@@ -270,9 +283,18 @@ class PibAgent:
 #     return transcription.text
     
 def is_speech(frame, sample_rate):
+    """
+    Checks if the given audio frame contains speech using WebRTC VAD.
+    """
     return vad.is_speech(frame, sample_rate)
 
 def record_audio():
+    """
+    Records audio from the microphone using PyAudio and WebRTC VAD to detect speech. When speech is detected, it starts recording until silence is detected.
+
+    Speech being detected is defined as a circular buffer of the last 10 frames containing more than 80% voiced frames.
+    The recording stops when silence is detected, defined as more than 80% unvoiced frames in the same buffer.
+    """
     audio = pyaudio.PyAudio()
     vad = webrtcvad.Vad(1)  # 0-3: 3 = most aggressive
 
@@ -317,6 +339,9 @@ def record_audio():
     return b''.join(frames)
 
 def transcribe_audio(audio_bytes, sample_rate=RATE):
+    """
+    Uses OPENAI's Whisper model to transcribe the recorded audio bytes into text.
+    """
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
         wav.write(temp_file.name, sample_rate, np.frombuffer(audio_bytes, dtype=np.int16))
         with open(temp_file.name, "rb") as f:
@@ -327,6 +352,7 @@ def transcribe_audio(audio_bytes, sample_rate=RATE):
     return transcription.text
 
 if __name__ == "__main__":
+    """ Main loop to run the PibAgent, record audio, and transcribe it. """
     agent = PibAgent()
     while True:
         audio = record_audio()
